@@ -12,6 +12,7 @@
 #import <CoreTelephony/CTTelephonyNetworkInfo.h>
 #import <ifaddrs.h>
 #import <net/if.h>
+#import <AVFoundation/AVFoundation.h>
 
 #ifdef BLUETOOTH
 #import <CoreBluetooth/CoreBluetooth.h>
@@ -40,9 +41,13 @@
 -(instancetype)init{
     self = [super init];
     if(self){
+//        [[NSNotificationCenter defaultCenter] addObserver:self
+//                                                 selector:@selector(volumeChanged:)
+//                                                     name:@"AVSystemController_SystemVolumeDidChangeNotification"
+//                                                   object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(volumeChanged:)
-                                                     name:@"AVSystemController_SystemVolumeDidChangeNotification"
+                                                 selector:@selector(addVolumeListener:)
+                                                     name:UIApplicationDidBecomeActiveNotification
                                                    object:nil];
 #ifdef BLUETOOTH
         cb = [[CBCentralManager alloc] initWithDelegate:nil queue:nil options:@{CBCentralManagerOptionShowPowerAlertKey: @NO}];
@@ -184,6 +189,30 @@ RCT_EXPORT_METHOD(activeListener:(NSString *)type resolve:(RCTPromiseResolveBloc
 #else
     NSLog(@"Fail to open [%@]. These APIs which start with 'switch*()' will cause a rejection from App Store, and you can use these APIs only when you distribute app outside App Store, see see https://github.com/c19354837/react-native-system-setting/blob/master/iOS.md", service);
 #endif
+}
+
+- (void)addVolumeListener:(NSNotification *)notification {
+        NSLog(@"AddVolumeListener");
+        AVAudioSession* audioSession = [AVAudioSession sharedInstance];
+
+        [audioSession setActive:YES error:nil];
+        [audioSession addObserver:self
+                       forKeyPath:@"outputVolume"
+                          options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld
+                          context:nil];
+}
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSString *,id> *)change context:(void *)context
+{
+
+    if (object == [AVAudioSession sharedInstance] && [keyPath isEqualToString:@"outputVolume"]) {
+        float newValue = [change[@"new"] floatValue];
+        if (skipSetVolumeCount == 0 && hasListeners) {
+                [self sendEventWithName:@"EventVolume" body:@{@"value": [NSNumber numberWithFloat:newValue]}];
+        }
+        if (skipSetVolumeCount > 0) {
+                skipSetVolumeCount--;
+        }
+    }
 }
 
 -(BOOL)isWifiEnabled{
